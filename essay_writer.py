@@ -180,12 +180,12 @@ if __name__ == "__main__":
                 elif "critique" in value:
                     print("Critique:", value["critique"])
                     
-    print("\nFinal State:")
-    print("============")
-    # Get the final state by applying all updates
-    final_state = config.copy()
-    for output in graph.stream(config, thread):
-        for key, value in output.items():
-            if key != 'configurable':
-                final_state.update(value)
-    print("Final Draft:", final_state.get("draft"))
+    # print("\nFinal State:")
+    # print("============")
+    # # Get the final state by applying all updates
+    # final_state = config.copy()
+    # for output in graph.stream(config, thread):
+    #     for key, value in output.items():
+    #         if key != 'configurable':
+    #             final_state.update(value)
+    # print("Final Draft:", final_state.get("draft"))
