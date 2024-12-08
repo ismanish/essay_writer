@@ -7,9 +7,7 @@ import os
 class ChatDatabase:
     def __init__(self, db_path="chat_history.db"):
         self.db_path = db_path
-        # Delete existing database if it exists
-        if os.path.exists(self.db_path):
-            os.remove(self.db_path)
+        # Initialize database if it doesn't exist or if tables need to be created
         self.init_db()
 
     def init_db(self):

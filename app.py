@@ -1,6 +1,7 @@
 import gradio as gr
 from essay_writer import create_essay_chain
 from chat_db import ChatDatabase
+from validators import is_valid_uuid, validate_message
 import json
 import uuid
 from typing import Dict, List, Tuple
@@ -29,41 +30,50 @@ def load_user_history(user_id: str) -> List[Dict[str, str]]:
     return chat_history
 
 def process_request(message: str, chat_history: List[Dict[str, str]], user_state) -> Tuple[str, List[Dict[str, str]], str]:
-    # Get or create user_id from state
-    user_id = user_state or str(uuid.uuid4())
-    
-    # Ensure user exists in database
-    db.create_or_get_user(user_id, f"user_{user_id[:8]}")
-    
     try:
-        # Get user's conversation history if chat history is empty
-        if not chat_history:
-            chat_history = load_user_history(user_id)
+        # Validate message
+        is_valid, error_msg = validate_message(message)
+        if not is_valid:
+            chat_history = chat_history or []
+            chat_history.append({"role": "user", "content": message})
+            chat_history.append({"role": "assistant", "content": f"Error: {error_msg}"})
+            return "", chat_history, user_state
+
+        # Get or create user_id from state
+        user_id = user_state or str(uuid.uuid4())
         
-        # Get last conversation summary
-        last_summary = db.get_last_conversation_summary(user_id)
+        # Ensure user exists in database
+        db.create_or_get_user(user_id, f"user_{user_id[:8]}")
         
-        # Initialize the essay chain
-        chain = create_essay_chain()
-        
-        # Add context from last conversation if available
-        context = ""
-        if last_summary:
-            context = f"\nContext from last conversation - Topic: {last_summary['task']}\n"
-        
-        # Process the request
-        result = chain.invoke({
-            "task": message + context,
-            "content": [],
-            "max_revisions": 1,
-            "revision_number": 0
-        })
-        
-        # Save to database
-        db.save_conversation(user_id, result)
-        
-        # Format response with safe get operations
-        response = f"""📝 Here's your essay:
+        try:
+            # Get user's conversation history if chat history is empty
+            if not chat_history:
+                chat_history = load_user_history(user_id)
+            
+            # Get last conversation summary
+            last_summary = db.get_last_conversation_summary(user_id)
+            
+            # Initialize the essay chain
+            chain = create_essay_chain()
+            
+            # Add context from last conversation if available
+            context = ""
+            if last_summary:
+                context = f"\nContext from last conversation - Topic: {last_summary['task']}\n"
+            
+            # Process the request
+            result = chain.invoke({
+                "task": message + context,
+                "content": [],
+                "max_revisions": 1,
+                "revision_number": 0
+            })
+            
+            # Save to database
+            db.save_conversation(user_id, result)
+            
+            # Format response with safe get operations
+            response = f"""📝 Here's your essay:
 
 {result.get('draft', 'No draft generated')}
 
@@ -72,19 +82,26 @@ def process_request(message: str, chat_history: List[Dict[str, str]], user_state
 2. Critique: {result.get('critique', 'No critique available')}
 
 🔍 Previous Context: {context if context else 'No previous context'}"""
+            
+            # Update chat history with proper message format
+            chat_history = chat_history or []
+            chat_history.append({"role": "user", "content": message})
+            chat_history.append({"role": "assistant", "content": response})
+            
+        except Exception as e:
+            error_message = f"An error occurred: {str(e)}"
+            chat_history = chat_history or []
+            chat_history.append({"role": "user", "content": message})
+            chat_history.append({"role": "assistant", "content": error_message})
         
-        # Update chat history with proper message format
-        chat_history = chat_history or []
-        chat_history.append({"role": "user", "content": message})
-        chat_history.append({"role": "assistant", "content": response})
-        
+        return "", chat_history, user_id
+
     except Exception as e:
         error_message = f"An error occurred: {str(e)}"
         chat_history = chat_history or []
         chat_history.append({"role": "user", "content": message})
         chat_history.append({"role": "assistant", "content": error_message})
-    
-    return "", chat_history, user_id
+        return "", chat_history, user_state
 
 def chat_interface():
     with gr.Blocks(theme=gr.themes.Soft()) as demo:
@@ -114,6 +131,10 @@ def chat_interface():
         
         def load_session(user_id: str) -> Tuple[str, List[Dict[str, str]], str]:
             if not user_id:
+                return "", [], None
+            
+            # Validate user_id format
+            if not is_valid_uuid(user_id):
                 return "", [], None
             
             # Verify user exists
