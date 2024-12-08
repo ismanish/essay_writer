@@ -2,10 +2,14 @@ import sqlite3
 from datetime import datetime
 from typing import List, Dict
 import json
+import os
 
 class ChatDatabase:
     def __init__(self, db_path="chat_history.db"):
         self.db_path = db_path
+        # Delete existing database if it exists
+        if os.path.exists(self.db_path):
+            os.remove(self.db_path)
         self.init_db()
 
     def init_db(self):

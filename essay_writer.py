@@ -2,8 +2,6 @@ from dotenv import load_dotenv
 from langgraph.graph import StateGraph, END
 from typing import TypedDict, Annotated, List
 import operator
-from langgraph.checkpoint.memory import MemorySaver
-from langgraph.checkpoint.sqlite import SqliteSaver
 from langchain_core.messages import AnyMessage, SystemMessage, HumanMessage, AIMessage, ChatMessage
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
@@ -13,8 +11,7 @@ import os
 
 load_dotenv()
 
-memory = SqliteSaver.from_conn_string("chat_history.db")
-
+memory = None
 
 class AgentState(TypedDict):
     task:str
@@ -92,7 +89,8 @@ def generation_node(state: AgentState):
         ]
     response = model.invoke(messages)
     return {
-        "draft": response.content, 
+        "draft": response.content,
+        "critique": state.get('critique', ''),  
         "revision_number": state.get("revision_number", 1) + 1
     }
 
@@ -117,30 +115,43 @@ def research_critique_node(state: AgentState):
     return {"content": content, "queries": queries.queries}
 
 def should_continue(state):
-    if state["revision_number"] > state["max_revisions"]:
-        return END
+    """Determine if we should continue revising or end."""
+    if state.get("revision_number", 0) >= state.get("max_revisions", 1):
+        return "end"
     return "reflect"
-
 
 def create_essay_chain():
     builder = StateGraph(AgentState)
 
+    # Add nodes
     builder.add_node("planner", plan_node)
     builder.add_node("researcher_plan", research_plan_node)
     builder.add_node("writer", generation_node)
     builder.add_node("reflection", reflection_node)
     builder.add_node("researcher_critique", research_critique_node)
 
+    # Set entry point
+    builder.set_entry_point("planner")
+
     # Add edges
     builder.add_edge("planner", "researcher_plan")
     builder.add_edge("researcher_plan", "writer")
-    builder.add_edge("writer", "reflection")
+    
+    # Add conditional edges for the revision loop
+    builder.add_conditional_edges(
+        "writer",
+        should_continue,
+        {
+            "end": END,
+            "reflect": "reflection"
+        }
+    )
+    
     builder.add_edge("reflection", "researcher_critique")
     builder.add_edge("researcher_critique", "writer")
-    builder.add_edge("writer", END, should_continue)
 
-    # Build the chain
-    chain = builder.compile(checkpointer=memory)
+    # Build the chain without memory for now
+    chain = builder.compile()
     
     return chain
 
