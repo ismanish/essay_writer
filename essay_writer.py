@@ -13,7 +13,7 @@ import os
 
 load_dotenv()
 
-memory = SqliteSaver.from_conn_string(":memory:")
+memory = SqliteSaver.from_conn_string("chat_history.db")
 
 
 class AgentState(TypedDict):
@@ -122,70 +122,38 @@ def should_continue(state):
     return "reflect"
 
 
-builder = StateGraph(AgentState)
+def create_essay_chain():
+    builder = StateGraph(AgentState)
 
-builder.add_node("planner", plan_node)
-builder.add_node("generate", generation_node)
-builder.add_node("reflect", reflection_node)
-builder.add_node("research_plan", research_plan_node)
-builder.add_node("research_critique", research_critique_node)
+    builder.add_node("planner", plan_node)
+    builder.add_node("researcher_plan", research_plan_node)
+    builder.add_node("writer", generation_node)
+    builder.add_node("reflection", reflection_node)
+    builder.add_node("researcher_critique", research_critique_node)
 
-builder.set_entry_point("planner")
+    # Add edges
+    builder.add_edge("planner", "researcher_plan")
+    builder.add_edge("researcher_plan", "writer")
+    builder.add_edge("writer", "reflection")
+    builder.add_edge("reflection", "researcher_critique")
+    builder.add_edge("researcher_critique", "writer")
+    builder.add_edge("writer", END, should_continue)
 
-builder.add_conditional_edges(
-    "generate", 
-    should_continue, 
-    {END: END, "reflect": "reflect"}
-)
-
-builder.add_edge("planner", "research_plan")
-builder.add_edge("research_plan", "generate")
-
-builder.add_edge("reflect", "research_critique")
-builder.add_edge("research_critique", "generate")
-
-# graph = builder.compile(checkpointer=memory)
-graph = builder.compile()
-
+    # Build the chain
+    chain = builder.compile(checkpointer=memory)
+    
+    return chain
 
 if __name__ == "__main__":
-    thread = {"configurable": {"thread_id": "1"}}
-
-    # Initialize the state
-    config = {
-        "task": "Write an essay about the impact of artificial intelligence on society",
-        "plan": "",
-        "draft": "",
-        "critique": "",
-        "content": [],
-        "max_revisions": 2,
-        "revision_number": 0
-    }
+    chain = create_essay_chain()
     
-    # Run the graph
-    for output in graph.stream(config, thread):
-        # The output contains the updates to the state
-        for key, value in output.items():
-            if key != 'configurable':  # Skip the thread configuration
-                print(f"\nExecuting node: {key}")
-                print("-" * 50)
-                
-                if "plan" in value:
-                    print("Generated Plan:", value["plan"])
-                elif "content" in value:
-                    print("Research Content Count:", len(value["content"]))
-                elif "draft" in value:
-                    print("Generated Draft:", value["draft"])
-                    print("Revision Number:", value.get("revision_number"))
-                elif "critique" in value:
-                    print("Critique:", value["critique"])
-                    
-    # print("\nFinal State:")
-    # print("============")
-    # # Get the final state by applying all updates
-    # final_state = config.copy()
-    # for output in graph.stream(config, thread):
-    #     for key, value in output.items():
-    #         if key != 'configurable':
-    #             final_state.update(value)
-    # print("Final Draft:", final_state.get("draft"))
+    result = chain.invoke({
+        "task": "Write about the importance of exercise",
+        "content": [],
+        "max_revisions": 1,
+        "revision_number": 0
+    })
+    
+    print("Plan:", result["plan"])
+    print("\nDraft:", result["draft"])
+    print("\nCritique:", result["critique"])

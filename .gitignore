@@ -3,3 +3,5 @@
 
 # Ignore checkpoint files
 *.ckpt
+
+__pycache__
