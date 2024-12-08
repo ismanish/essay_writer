@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  essay-writer:
+    build: .
+    ports:
+      - "7860:7860"
+    volumes:
+      - ./data:/app/data
+    env_file:
+      - .env
+    environment:
+      - PORT=7860
+      - DB_PATH=/app/data/chat_history.db
+    restart: unless-stopped

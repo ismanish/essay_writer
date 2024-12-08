@@ -5,8 +5,13 @@ from validators import is_valid_uuid, validate_message
 import json
 import uuid
 from typing import Dict, List, Tuple
+import os
+from dotenv import load_dotenv
 
-db = ChatDatabase()
+# Load environment variables
+load_dotenv()
+
+db = ChatDatabase(os.getenv('DB_PATH', 'chat_history.db'))
 
 def format_conversation_history(conversations: List[Tuple]) -> str:
     if not conversations:
@@ -178,4 +183,9 @@ def chat_interface():
 
 if __name__ == "__main__":
     demo = chat_interface()
-    demo.launch(share=True)
+    # demo.launch(share=True)
+    demo.launch(
+        server_name="0.0.0.0",
+        server_port=int(os.getenv('PORT', 7860)),
+        share=os.getenv('SHARE', 'false').lower() == 'true'
+    )
